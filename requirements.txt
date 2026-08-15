@@ -1,0 +1,6 @@
+# Popup Stopper runtime dependencies (Windows only, Python 3.11+)
+PySide6>=6.7
+psutil>=6.0
+
+# Only needed by scripts/install_shortcut.py to write the Desktop .lnk
+pywin32>=306

@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+venv/
+
+# Runtime data: config, recorded popup history and logs are personal to a machine
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build output from scripts/install_shortcut.py
+popupstopper/assets/icon.ico
+*.lnk
+
+# Screenshots and scratch files
+shot_*.png

@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3D8BFF"/>
+      <stop offset="1" stop-color="#1B4FB0"/>
+    </linearGradient>
+    <mask id="cut">
+      <rect x="0" y="0" width="128" height="128" fill="#fff"/>
+      <!-- Knock the slash out of the popup so the bar reads as "blocked" -->
+      <line x1="26" y1="102" x2="102" y2="26" stroke="#000" stroke-width="22" stroke-linecap="round"/>
+    </mask>
+  </defs>
+
+  <rect x="6" y="6" width="116" height="116" rx="22" fill="url(#bg)"/>
+
+  <g mask="url(#cut)">
+    <!-- A small dialog box: title bar plus two lines of text -->
+    <rect x="30" y="36" width="68" height="56" rx="6" fill="none" stroke="#fff" stroke-width="7"/>
+    <line x1="30" y1="53" x2="98" y2="53" stroke="#fff" stroke-width="7"/>
+    <line x1="44" y1="69" x2="84" y2="69" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+    <line x1="44" y1="80" x2="70" y2="80" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  </g>
+
+  <line x1="26" y1="102" x2="102" y2="26" stroke="#FF4D4D" stroke-width="11" stroke-linecap="round"/>
+</svg>
