@@ -170,8 +170,9 @@ class Monitor:
             record = enrich_toast(event)
         else:
             record = attribute.enrich_window(event)
-            pids = [event.pid] + [parent.get("pid", 0) for parent in record.get("parents", [])]
-            match = self.correlator.attribute(event.exe_name, pids, event.ts)
+            chain = record.get("parents", [])
+            pids = [event.pid] + [parent.get("pid", 0) for parent in chain]
+            match = self.correlator.attribute(event.exe_name, pids, event.ts, chain=chain)
             if match:
                 record["task_name"] = match.get("task_name")
                 record["task_exe"] = match.get("task_exe")

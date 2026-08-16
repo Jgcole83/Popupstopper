@@ -24,6 +24,15 @@ from PySide6.QtWidgets import (
 
 RECORD_ROLE = Qt.ItemDataRole.UserRole + 1
 
+# Why a popup was tied to a scheduled task, in words rather than jargon, so it
+# is obvious when the link is proven and when it is an inference.
+CONFIDENCE_WORDS = {
+    "exact": "Confirmed - this popup came from a process the task started",
+    "executable": "Confirmed - the task launches this same program",
+    "console-host": "Likely - it was the only console task running at that moment",
+    "known-component": "This program is a known Windows Update component",
+}
+
 CATEGORY_COLORS = {
     "Windows Update": "#FFB44D",
     "Update": "#FFB44D",
@@ -296,10 +305,11 @@ class DetailPane(QWidget):
         self._add("Window class", record.get("window_class") or "", mono=True)
 
         if record.get("task_name"):
-            confidence = details.get("task_confidence")
-            suffix = f"  ({confidence} match)" if confidence else ""
-            self._add("Scheduled task", f"{record['task_name']}{suffix}")
+            self._add("Scheduled task", str(record["task_name"]))
             self._add("Task runs", record.get("task_exe") or "", mono=True)
+            confidence = details.get("task_confidence")
+            if confidence:
+                self._add("How we know", CONFIDENCE_WORDS.get(confidence, confidence))
 
         chain = record.get("parents") or []
         if isinstance(chain, list) and len(chain) > 1:

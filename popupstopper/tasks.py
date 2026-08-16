@@ -4,6 +4,12 @@ Task Scheduler writes event 129 whenever it launches a process, including the
 new process's PID and the executable path. Matching that PID against a popup's
 process ancestry gives a definitive answer to "what scheduled this?", which is
 the whole point of the tool.
+
+Where that fails, the fallbacks still demand a real link: the task launches the
+same executable, or the popup is a terminal window and exactly one console
+program was started by a task at that moment. A task that merely happened to
+run at a similar time is never reported, because the user acts on what we say
+and would otherwise disable something innocent.
 """
 
 from __future__ import annotations
@@ -36,6 +42,31 @@ UPDATE_EXECUTABLES = {
     "mousocoreworker.exe": "\\Microsoft\\Windows\\UpdateOrchestrator",
     "wuauclt.exe": "\\Microsoft\\Windows\\WindowsUpdate",
 }
+
+# A console program launched by a task does not own its own window. The window
+# belongs to the terminal hosting it, whose process ancestry has nothing to do
+# with the task, so PID matching cannot work for these.
+CONSOLE_HOSTS = frozenset({"windowsterminal.exe", "conhost.exe", "openconsole.exe"})
+
+# Programs that allocate a console when run, and so can produce one of the
+# windows above. Used to tell a plausible culprit from an unrelated task that
+# merely happened to run at the same moment.
+CONSOLE_PROGRAMS = frozenset(
+    {
+        "python.exe", "py.exe", "node.exe", "cmd.exe", "powershell.exe", "pwsh.exe",
+        "wscript.exe", "cscript.exe", "java.exe", "ruby.exe", "perl.exe", "php.exe",
+        "git.exe", "robocopy.exe", "curl.exe", "ffmpeg.exe", "7z.exe",
+    }
+)
+
+
+def _is_console_program(exe: str) -> bool:
+    lowered = (exe or "").strip().strip('"').lower()
+    if not lowered:
+        return False
+    if lowered.endswith((".bat", ".cmd")):
+        return True
+    return lowered.rsplit("\\", 1)[-1] in CONSOLE_PROGRAMS
 
 
 @dataclass
@@ -336,14 +367,29 @@ class TaskCorrelator:
         self,
         pids: Iterable[int],
         when: float,
+        chain: list[dict[str, Any]] | None = None,
+        exe_name: str = "",
         slack_seconds: float = 45.0,
     ) -> dict[str, Any] | None:
-        """Match a popup to a task, preferring an exact PID hit over timing."""
+        """Match a popup to the task that caused it, or to nothing at all.
+
+        Naming the wrong task is worse than naming none, because the user acts
+        on what we say and would disable something innocent. Every tier below
+        requires a real link between the popup and the task; a task that merely
+        ran at a similar moment is not evidence and is never reported.
+        """
         pid_set = {pid for pid in pids if pid and pid > 0}
+        chain = chain or []
+        chain_names = {str(entry.get("name", "")).lower() for entry in chain if entry.get("name")}
+        chain_exes = {
+            str(entry.get("exe", "")).lower() for entry in chain if entry.get("exe")
+        }
         with self._lock:
             launches = list(self._launches)
+        newest_first = sorted(launches, key=lambda item: item.ts, reverse=True)
 
-        for launch in sorted(launches, key=lambda item: item.ts, reverse=True):
+        # The task launched a process this popup descends from. Definitive.
+        for launch in newest_first:
             if launch.pid and launch.pid in pid_set:
                 return {
                     "task_name": launch.task_name,
@@ -352,23 +398,48 @@ class TaskCorrelator:
                     "launched_at": launch.ts,
                 }
 
-        best: TaskLaunch | None = None
-        for launch in launches:
-            delta = when - launch.ts
-            if 0 <= delta <= slack_seconds and (best is None or launch.ts > best.ts):
-                best = launch
-        if best is not None:
-            return {
-                "task_name": best.task_name,
-                "task_exe": best.exe,
-                "confidence": "timing",
-                "launched_at": best.ts,
-            }
+        # The task launched this very executable, even if the PID has since
+        # changed or the ancestry could not be read.
+        for launch in newest_first:
+            exe = (launch.exe or "").strip().strip('"')
+            if not exe:
+                continue
+            if exe.lower() in chain_exes or exe.lower().rsplit("\\", 1)[-1] in chain_names:
+                return {
+                    "task_name": launch.task_name,
+                    "task_exe": launch.exe,
+                    "confidence": "executable",
+                    "launched_at": launch.ts,
+                }
+
+        # A terminal window belongs to the console host, not to the program
+        # running inside it, so neither test above can succeed. Accept a single
+        # unambiguous console-producing task that started just beforehand.
+        if (exe_name or "").lower() in CONSOLE_HOSTS:
+            candidates = [
+                launch
+                for launch in launches
+                if 0 <= when - launch.ts <= slack_seconds and _is_console_program(launch.exe)
+            ]
+            if candidates and len({launch.task_name for launch in candidates}) == 1:
+                best = max(candidates, key=lambda item: item.ts)
+                return {
+                    "task_name": best.task_name,
+                    "task_exe": best.exe,
+                    "confidence": "console-host",
+                    "launched_at": best.ts,
+                }
         return None
 
-    def attribute(self, exe_name: str, pids: Iterable[int], when: float) -> dict[str, Any] | None:
+    def attribute(
+        self,
+        exe_name: str,
+        pids: Iterable[int],
+        when: float,
+        chain: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any] | None:
         """Task attribution, falling back to known Windows Update executables."""
-        match = self.find(pids, when)
+        match = self.find(pids, when, chain=chain, exe_name=exe_name)
         if match:
             return match
         known = UPDATE_EXECUTABLES.get((exe_name or "").lower())
